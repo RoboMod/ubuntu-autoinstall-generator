@@ -43,6 +43,7 @@ Available options:
                         by early Ubuntu 20.04 release ISOs.
 -u, --user-data         Path to user-data file. Required if using -a
 -m, --meta-data         Path to meta-data file. Will be an empty file if not specified and using -a
+-x, --extra-files-dir   Path to directory with additional files to be included
 -k, --no-verify         Disable GPG verification of the source ISO file. By default SHA256SUMS-$today and
                         SHA256SUMS-$today.gpg in ${script_dir} will be used to verify the authenticity and integrity
                         of the source ISO file. If they are not present the latest daily SHA256SUMS will be
@@ -64,6 +65,7 @@ function parse_params() {
         # default values of variables set from params
         user_data_file=''
         meta_data_file=''
+        extra_files_dir=''
         download_url="https://cdimage.ubuntu.com/ubuntu-server/focal/daily-live/current"
         download_iso="focal-live-server-amd64.iso"
         original_iso="ubuntu-original-$today.iso"
@@ -99,6 +101,10 @@ function parse_params() {
                         ;;
                 -m | --meta-data)
                         meta_data_file="${2-}"
+                        shift
+                        ;;
+                -x | --extra-files-dir)
+                        extra_files_dir="${2-}"
                         shift
                         ;;
                 -?*) die "Unknown option: $1" ;;
@@ -241,6 +247,11 @@ if [ ${all_in_one} -eq 1 ]; then
                 cp "$meta_data_file" "$tmpdir/nocloud/meta-data"
         else
                 touch "$tmpdir/nocloud/meta-data"
+        fi
+        if [ -n "${extra_files_dir}" ]; then
+                log "🧩 Adding extra-files..."
+                mkdir "$tmpdir/nocloud/extra-files"
+                cp -r "$extra_files_dir" "$tmpdir/nocloud/"
         fi
         sed -i -e 's,---, ds=nocloud;s=/cdrom/nocloud/  ---,g' "$tmpdir/isolinux/txt.cfg"
         sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/boot/grub/grub.cfg"
