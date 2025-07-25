@@ -1,6 +1,12 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+UBUNTU_MAJOR_VERSION=24
+UBUNTU_MINOR_VERSION=04
+UBUNTU_VERSION=${UBUNTU_MAJOR_VERSION}.${UBUNTU_MINOR_VERSION}
+UBUNTU_RELNAME="Noble Numbat"
+UBUNTU_REL="noble"
+
 function cleanup() {
         trap - SIGINT SIGTERM ERR EXIT
         if [ -n "${tmpdir+x}" ]; then
@@ -66,8 +72,8 @@ function parse_params() {
         user_data_file=''
         meta_data_file=''
         extra_files_dir=''
-        download_url="https://cdimage.ubuntu.com/ubuntu-server/focal/daily-live/current"
-        download_iso="focal-live-server-amd64.iso"
+        download_url="https://cdimage.ubuntu.com/ubuntu-server/${UBUNTU_REL}/daily-live/current"
+        download_iso="${UBUNTU_REL}-live-server-amd64.iso"
         original_iso="ubuntu-original-$today.iso"
         source_iso="${script_dir}/${original_iso}"
         destination_iso="${script_dir}/ubuntu-autoinstall-$today.iso"
@@ -127,9 +133,9 @@ function parse_params() {
         fi
 
         if [ "${use_release_iso}" -eq 1 ]; then
-                download_url="https://releases.ubuntu.com/focal"
+                download_url="https://releases.ubuntu.com/${UBUNTU_REL}"
                 log "🔎 Checking for current release..."
-                download_iso=$(curl -sSL "${download_url}" | grep -oP 'ubuntu-20\.04\.\d*-live-server-amd64\.iso' | head -n 1)
+                download_iso=$(curl -sSL "${download_url}" | grep -oP 'ubuntu-${UBUNTU_MAJOR_VERSION}\.${UBUNTU_MINOR_VERSION}\.\d*-live-server-amd64\.iso' | head -n 1)
                 original_iso="${download_iso}"
                 source_iso="${script_dir}/${download_iso}"
                 current_release=$(echo "${download_iso}" | cut -f2 -d-)
@@ -157,14 +163,14 @@ fi
 
 log "🔎 Checking for required utilities..."
 [[ ! -x "$(command -v xorriso)" ]] && die "💥 xorriso is not installed. On Ubuntu, install  the 'xorriso' package."
+[[ ! -x "$(command -v 7z)" ]] && die "💥 7z is not installed. On Ubuntu, install  the '7zip' package."
 [[ ! -x "$(command -v sed)" ]] && die "💥 sed is not installed. On Ubuntu, install the 'sed' package."
 [[ ! -x "$(command -v curl)" ]] && die "💥 curl is not installed. On Ubuntu, install the 'curl' package."
 [[ ! -x "$(command -v gpg)" ]] && die "💥 gpg is not installed. On Ubuntu, install the 'gpg' package."
-[[ ! -f "/usr/lib/ISOLINUX/isohdpfx.bin" && ! -f "/usr/lib/syslinux/bios/isohdpfx.bin" ]] && die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package; on Arch Linux, install the 'syslinux' package."
 log "👍 All required utilities are installed."
 
 if [ ! -f "${source_iso}" ]; then
-        log "🌎 Downloading ISO image for Ubuntu 20.04 Focal Fossa..."
+        log "🌎 Downloading ISO image for Ubuntu ${UBUNTU_VERSION} ${UBUNTU_RELNAME}..."
         curl -NsSL "${download_url}/${download_iso}" -o "${source_iso}"
         log "👍 Downloaded and saved to ${source_iso}"
 else
@@ -214,16 +220,14 @@ else
         log "🤞 Skipping verification of source ISO."
 fi
 log "🔧 Extracting ISO image..."
-xorriso -osirrox on -indev "${source_iso}" -extract / "$tmpdir" &>/dev/null
+7z -y x "${source_iso}" -o"$tmpdir/iso" &>/dev/null
 chmod -R u+w "$tmpdir"
-rm -rf "$tmpdir/"'[BOOT]'
-log "👍 Extracted to $tmpdir"
+mv "$tmpdir/iso/"'[BOOT]' "$tmpdir/BOOT"
+log "👍 Extracted to $tmpdir/iso"
 
 if [ ${use_hwe_kernel} -eq 1 ]; then
         if grep -q "hwe-vmlinuz" "$tmpdir/boot/grub/grub.cfg"; then
                 log "☑️ Destination ISO will use HWE kernel."
-                sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/isolinux/txt.cfg"
-                sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/isolinux/txt.cfg"
                 sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/boot/grub/grub.cfg"
                 sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/boot/grub/grub.cfg"
                 sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/boot/grub/loopback.cfg"
@@ -234,26 +238,24 @@ if [ ${use_hwe_kernel} -eq 1 ]; then
 fi
 
 log "🧩 Adding autoinstall parameter to kernel command line..."
-sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/isolinux/txt.cfg"
 sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/boot/grub/grub.cfg"
 sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/boot/grub/loopback.cfg"
 log "👍 Added parameter to UEFI and BIOS kernel command lines."
 
 if [ ${all_in_one} -eq 1 ]; then
         log "🧩 Adding user-data and meta-data files..."
-        mkdir "$tmpdir/nocloud"
-        cp "$user_data_file" "$tmpdir/nocloud/user-data"
+        mkdir "$tmpdir/iso/nocloud"
+        cp "$user_data_file" "$tmpdir/iso/nocloud/user-data"
         if [ -n "${meta_data_file}" ]; then
-                cp "$meta_data_file" "$tmpdir/nocloud/meta-data"
+                cp "$meta_data_file" "$tmpdir/iso/nocloud/meta-data"
         else
-                touch "$tmpdir/nocloud/meta-data"
+                touch "$tmpdir/iso/nocloud/meta-data"
         fi
         if [ -n "${extra_files_dir}" ]; then
                 log "🧩 Adding extra-files..."
-                mkdir "$tmpdir/nocloud/extra-files"
-                cp -r "$extra_files_dir" "$tmpdir/nocloud/"
+                mkdir "$tmpdir/iso/nocloud/extra-files"
+                cp -r "$extra_files_dir" "$tmpdir/iso/nocloud/"
         fi
-        sed -i -e 's,---, ds=nocloud;s=/cdrom/nocloud/  ---,g' "$tmpdir/isolinux/txt.cfg"
         sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/boot/grub/grub.cfg"
         sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/boot/grub/loopback.cfg"
         log "👍 Added data and configured kernel command line."
@@ -273,15 +275,9 @@ else
 fi
 
 log "📦 Repackaging extracted files into an ISO image..."
-cd "$tmpdir"
-if [ -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]; then
-        xorriso -as mkisofs -r -V "ubuntu-autoinstall-$today" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
-elif [ -f "/usr/lib/syslinux/bios/isohdpfx.bin" ]; then
-        xorriso -as mkisofs -r -V "ubuntu-autoinstall-$today" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/syslinux/bios/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
-else
-        die "💥 could not find isolinux. On Ubuntu, install the 'isolinux' package; on Arch Linux, install the 'syslinux' package."
-fi
-cd "$OLDPWD"
+pushd "$tmpdir/iso"
+xorriso -as mkisofs -r -V "ubuntu-autoinstall-$today" --grub2-mbr ../BOOT/1-Boot-NoEmul.img -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b ../BOOT/2-Boot-NoEmul.img -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c '/boot.catalog' -b '/boot/grub/i386-pc/eltorito.img' -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" .
+popd
 log "👍 Repackaged into ${destination_iso}"
 
 die "✅ Completed." 0
