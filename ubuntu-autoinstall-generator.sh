@@ -267,9 +267,9 @@ fi
 if [ ${md5_checksum} -eq 1 ]; then
         log "👷 Updating $tmpdir/iso/md5sum.txt with hashes of modified files..."
         md5=$(md5sum "$tmpdir/iso/boot/grub/grub.cfg" | cut -f1 -d ' ')
-        sed -i -e 's,^.*[[:space:]] ./iso/boot/grub/grub.cfg,'"$md5"'  ./iso/boot/grub/grub.cfg,' "$tmpdir/iso/md5sum.txt"
+        sed -i -e 's,^.*[[:space:]] ./boot/grub/grub.cfg,'"$md5"'  ./boot/grub/grub.cfg,' "$tmpdir/iso/md5sum.txt"
         md5=$(md5sum "$tmpdir/iso/boot/grub/loopback.cfg" | cut -f1 -d ' ')
-        sed -i -e 's,^.*[[:space:]] ./iso/boot/grub/loopback.cfg,'"$md5"'  ./iso/boot/grub/loopback.cfg,' "$tmpdir/iso/md5sum.txt"
+        sed -i -e 's,^.*[[:space:]] ./boot/grub/loopback.cfg,'"$md5"'  ./boot/grub/loopback.cfg,' "$tmpdir/iso/md5sum.txt"
         log "👍 Updated hashes."
 else
         log "🗑️ Clearing MD5 hashes..."
