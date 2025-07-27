@@ -174,10 +174,12 @@ if [ ! -f "${source_iso}" ]; then
         curl -NsSL "${download_url}/${download_iso}" -o "${source_iso}"
         log "👍 Downloaded and saved to ${source_iso}"
 else
-        log "☑️ Using existing ${source_iso} file."
+        log "☑️  Using existing ${source_iso} file."
+        current_release=$(echo "${source_iso}" | rev | cut -f1 -d/ | rev | cut -f3-5 -d- | cut -f1 -d.)
+        sha_suffix="${current_release}"
         if [ ${gpg_verify} -eq 1 ]; then
                 if [ "${source_iso}" != "${script_dir}/${original_iso}" ]; then
-                        log "⚠️ Automatic GPG verification is enabled. If the source ISO file is not the latest daily or release image, verification will fail!"
+                        log "⚠️  Automatic GPG verification is enabled. If the source ISO file is not the latest daily or release image, verification will fail!"
                 fi
         fi
 fi
@@ -188,7 +190,7 @@ if [ ${gpg_verify} -eq 1 ]; then
                 curl -NsSL "${download_url}/SHA256SUMS" -o "${script_dir}/SHA256SUMS-${sha_suffix}"
                 curl -NsSL "${download_url}/SHA256SUMS.gpg" -o "${script_dir}/SHA256SUMS-${sha_suffix}.gpg"
         else
-                log "☑️ Using existing SHA256SUMS-${sha_suffix} & SHA256SUMS-${sha_suffix}.gpg files."
+                log "☑️  Using existing SHA256SUMS-${sha_suffix} & SHA256SUMS-${sha_suffix}.gpg files."
         fi
 
         if [ ! -f "${script_dir}/${ubuntu_gpg_key_id}.keyring" ]; then
@@ -196,7 +198,7 @@ if [ ${gpg_verify} -eq 1 ]; then
                 gpg -q --no-default-keyring --keyring "${script_dir}/${ubuntu_gpg_key_id}.keyring" --keyserver "hkp://keyserver.ubuntu.com" --recv-keys "${ubuntu_gpg_key_id}"
                 log "👍 Downloaded and saved to ${script_dir}/${ubuntu_gpg_key_id}.keyring"
         else
-                log "☑️ Using existing Ubuntu signing key saved in ${script_dir}/${ubuntu_gpg_key_id}.keyring"
+                log "☑️  Using existing Ubuntu signing key saved in ${script_dir}/${ubuntu_gpg_key_id}.keyring"
         fi
 
         log "🔐 Verifying ${source_iso} integrity and authenticity..."
@@ -219,6 +221,7 @@ if [ ${gpg_verify} -eq 1 ]; then
 else
         log "🤞 Skipping verification of source ISO."
 fi
+
 log "🔧 Extracting ISO image..."
 7z -y x "${source_iso}" -o"$tmpdir/iso" &>/dev/null
 chmod -R u+w "$tmpdir"
@@ -226,20 +229,20 @@ mv "$tmpdir/iso/"'[BOOT]' "$tmpdir/BOOT"
 log "👍 Extracted to $tmpdir/iso"
 
 if [ ${use_hwe_kernel} -eq 1 ]; then
-        if grep -q "hwe-vmlinuz" "$tmpdir/boot/grub/grub.cfg"; then
+        if grep -q "hwe-vmlinuz" "$tmpdir/iso/boot/grub/grub.cfg"; then
                 log "☑️ Destination ISO will use HWE kernel."
-                sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/boot/grub/grub.cfg"
-                sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/boot/grub/grub.cfg"
-                sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/boot/grub/loopback.cfg"
-                sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/boot/grub/loopback.cfg"
+                sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/iso/boot/grub/grub.cfg"
+                sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/iso/boot/grub/grub.cfg"
+                sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "$tmpdir/iso/boot/grub/loopback.cfg"
+                sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "$tmpdir/iso/boot/grub/loopback.cfg"
         else
                 log "⚠️ This source ISO does not support the HWE kernel. Proceeding with the regular kernel."
         fi
 fi
 
 log "🧩 Adding autoinstall parameter to kernel command line..."
-sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/boot/grub/grub.cfg"
-sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/boot/grub/loopback.cfg"
+sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/iso/boot/grub/grub.cfg"
+sed -i -e 's/---/ autoinstall  ---/g' "$tmpdir/iso/boot/grub/loopback.cfg"
 log "👍 Added parameter to UEFI and BIOS kernel command lines."
 
 if [ ${all_in_one} -eq 1 ]; then
@@ -256,28 +259,28 @@ if [ ${all_in_one} -eq 1 ]; then
                 mkdir "$tmpdir/iso/nocloud/extra-files"
                 cp -r "$extra_files_dir" "$tmpdir/iso/nocloud/"
         fi
-        sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/boot/grub/grub.cfg"
-        sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/boot/grub/loopback.cfg"
+        sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/iso/boot/grub/grub.cfg"
+        sed -i -e 's,---, ds=nocloud\\\;s=/cdrom/nocloud/  ---,g' "$tmpdir/iso/boot/grub/loopback.cfg"
         log "👍 Added data and configured kernel command line."
 fi
 
 if [ ${md5_checksum} -eq 1 ]; then
-        log "👷 Updating $tmpdir/md5sum.txt with hashes of modified files..."
-        md5=$(md5sum "$tmpdir/boot/grub/grub.cfg" | cut -f1 -d ' ')
-        sed -i -e 's,^.*[[:space:]] ./boot/grub/grub.cfg,'"$md5"'  ./boot/grub/grub.cfg,' "$tmpdir/md5sum.txt"
-        md5=$(md5sum "$tmpdir/boot/grub/loopback.cfg" | cut -f1 -d ' ')
-        sed -i -e 's,^.*[[:space:]] ./boot/grub/loopback.cfg,'"$md5"'  ./boot/grub/loopback.cfg,' "$tmpdir/md5sum.txt"
+        log "👷 Updating $tmpdir/iso/md5sum.txt with hashes of modified files..."
+        md5=$(md5sum "$tmpdir/iso/boot/grub/grub.cfg" | cut -f1 -d ' ')
+        sed -i -e 's,^.*[[:space:]] ./iso/boot/grub/grub.cfg,'"$md5"'  ./iso/boot/grub/grub.cfg,' "$tmpdir/iso/md5sum.txt"
+        md5=$(md5sum "$tmpdir/iso/boot/grub/loopback.cfg" | cut -f1 -d ' ')
+        sed -i -e 's,^.*[[:space:]] ./iso/boot/grub/loopback.cfg,'"$md5"'  ./iso/boot/grub/loopback.cfg,' "$tmpdir/iso/md5sum.txt"
         log "👍 Updated hashes."
 else
         log "🗑️ Clearing MD5 hashes..."
-        echo > "$tmpdir/md5sum.txt"
+        echo > "$tmpdir/iso/md5sum.txt"
         log "👍 Cleared hashes."
 fi
 
 log "📦 Repackaging extracted files into an ISO image..."
-pushd "$tmpdir/iso"
-xorriso -as mkisofs -r -V "ubuntu-autoinstall-$today" --grub2-mbr ../BOOT/1-Boot-NoEmul.img -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b ../BOOT/2-Boot-NoEmul.img -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c '/boot.catalog' -b '/boot/grub/i386-pc/eltorito.img' -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" .
-popd
+pushd "$tmpdir/iso" &>/dev/null
+xorriso -as mkisofs -r -V "ubuntu-autoinstall-$today" --grub2-mbr ../BOOT/1-Boot-NoEmul.img -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b ../BOOT/2-Boot-NoEmul.img -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c '/boot.catalog' -b '/boot/grub/i386-pc/eltorito.img' -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
+popd &>/dev/null
 log "👍 Repackaged into ${destination_iso}"
 
 die "✅ Completed." 0
